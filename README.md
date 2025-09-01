@@ -36,6 +36,7 @@ npm run dev
 ```
 
 The application will be available at `http://localhost:5173`
+backend : https://modelbackendai.streamlit.app/
 
 ## 🏗️ Project Structure
 

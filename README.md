@@ -39,8 +39,8 @@ npm run dev
 ```
 
 The application will be available at `http://localhost:5173`
-Deployed  Link: https://secure-gluco.vercel.app/
-Backend Link: https://modelbackendai.streamlit.app/
+-Deployed  Link: https://secure-gluco.vercel.app/
+-Backend Link: https://modelbackendai.streamlit.app/
 
 ## 🏗️ Project Structure
 
@@ -215,9 +215,9 @@ print("✅ Preprocessing objects saved!")
 
 ```bash
 streamlit run cyber_threat_detection_app.py
-Backend : https://modelbackendai.streamlit.app/
 ```
-
+#### Backend : https://modelbackendai.streamlit.app/
+---
 ## 🎯 Features
 
 * **Clean UI** with custom styling
@@ -290,5 +290,3 @@ Dependencies: Streamlit, PyTorch, Pandas, NumPy, Plotly, Scikit-learn.
 **SecureGluco Dashboard & Streamlit App** — Protecting Your Health with Advanced BioMEMS Technology and AI Security.
 
 ---
-
-Would you like me to also generate a **combined requirements.txt** that works for both the **React dashboard** and the **Streamlit app** (frontend + backend together), or do you prefer keeping them separate?

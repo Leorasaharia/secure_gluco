@@ -1,3 +1,4 @@
+# Full corrected cyber_threat_detection_app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,6 +9,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import warnings
+import os, joblib
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 warnings.filterwarnings('ignore')
 
 # Set page config
@@ -112,7 +115,7 @@ FEATURE_NAMES = [
     'Number', 'Magnitude', 'Radius', 'Covariance', 'Variance', 'Weight'
 ]
 
-# Sample data for quick testing
+# Sample data for quick testing (kept as before)
 SAMPLE_DATA = {
     'Benign Traffic': {
         'Header_Length': 20, 'Protocol_Type': 6, 'Duration': 0.5, 'Rate': 1000, 'Srate': 500, 'Drate': 500,
@@ -160,67 +163,220 @@ SAMPLE_DATA = {
     }
 }
 
-@st.cache_resource
-def load_model_and_preprocessors():
-    """Load the trained model and preprocessing objects"""
-    try:
-        # Try to load the actual trained model
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
-        # Load preprocessing objects
-        with open('scaler.pkl', 'rb') as f:
-            scaler = pickle.load(f)
-        with open('label_encoder.pkl', 'rb') as f:
-            label_encoder = pickle.load(f)
-        
-        # Initialize model with correct dimensions
-        num_features = len(FEATURE_NAMES)
-        num_classes = len(label_encoder.classes_)
-        model = LightweightANN(num_features, num_classes)
-        
-        # Load trained weights
-        model.load_state_dict(torch.load('best_model.pth', map_location=device))
-        model.eval()
-        
-        return model, scaler, label_encoder, device, True
-    except FileNotFoundError as e:
-        st.warning(f"Model files not found: {e}. Using demo mode with simulated predictions.")
-        return None, None, None, None, False
+# --- helpers for simulated/randomized predictions (place after LightweightANN) ---
+def _feature_influence_score(features, FEATURE_NAMES):
+    """
+    Create a lightweight vector of key feature-derived scores in [0,1].
+    This is used to bias random probabilities towards plausible classes.
+    """
+    f = dict(zip(FEATURE_NAMES, features))
+    rate = float(f.get("Rate", 0.0))
+    syn = float(f.get("syn_count", 0.0))
+    rst = float(f.get("rst_count", 0.0))
+    duration = float(f.get("Duration", 0.0))
 
+    # scaled scores (clamped 0..1)
+    s_ddos = min(1.0, (rate / 50000.0) + (syn / 2000.0))
+    s_port = min(1.0, (syn / 500.0) + (rst / 300.0))
+    s_malware = min(1.0, (duration / 60.0) + max(0.0, (500.0 - rate) / 10000.0))
+    s_benign = max(0.0, 1.0 - 0.6 * s_ddos - 0.5 * s_port - 0.5 * s_malware)
+
+    return {
+        "ddos": s_ddos,
+        "port": s_port,
+        "malware": s_malware,
+        "benign": s_benign
+    }
+
+def _randomized_probabilities(features, label_encoder, FEATURE_NAMES, randomness=0.25):
+    """
+    Build a probability distribution over label_encoder.classes_ using feature influence
+    plus controlled randomness. 'randomness' controls how noisy the distribution is (0..1).
+    """
+    base_scores = _feature_influence_score(features, FEATURE_NAMES)
+    classes = list(label_encoder.classes_)
+
+    # Build raw scores aligned to classes
+    raw = []
+    for cl in classes:
+        cl_l = cl.lower()
+        if "ddos" in cl_l:
+            score = base_scores["ddos"]
+        elif "port" in cl_l or "scan" in cl_l or "recon" in cl_l:
+            score = base_scores["port"]
+        elif "malware" in cl_l:
+            score = base_scores["malware"]
+        elif "benign" in cl_l or "normal" in cl_l:
+            score = base_scores["benign"]
+        else:
+            # fallback small base
+            score = 0.05
+        raw.append(float(score) + 0.001)  # tiny floor to avoid zeros
+
+    raw = np.array(raw, dtype=float)
+
+    # add controlled random noise (sampled per-call)
+    noise = np.random.RandomState()  # fresh RNG per-call
+    random_shift = noise.normal(loc=0.0, scale=randomness, size=raw.shape)
+    raw = raw + random_shift
+    raw = np.clip(raw, a_min=0.001, a_max=None)
+
+    # normalize to probabilities
+    probs = raw / raw.sum()
+
+    # optionally sharpen or smooth distribution slightly
+    suspiciousness = raw.sum() - (len(raw) * 0.05)
+    sharpen = 1.0 + min(2.0, suspiciousness)
+    probs = np.power(probs, sharpen)
+    probs = probs / probs.sum()
+
+    return probs
+
+# --- new predict_threat function (replaces old) ---
 def predict_threat(features, model, scaler, label_encoder, device, use_real_model):
-    """Make prediction using the trained model or simulation"""
+    """Make prediction using the trained model or randomized simulation.
+
+    When use_real_model True: unchanged — uses model/scaler/label_encoder.
+    When use_real_model False: returns randomized probabilities influenced by features.
+    """
     if use_real_model and model is not None:
-        # Real model prediction
+        # Real model prediction (unchanged)
         features_scaled = scaler.transform([features])
         features_tensor = torch.tensor(features_scaled, dtype=torch.float32).to(device)
-        
+
         with torch.no_grad():
             outputs = model(features_tensor)
             probabilities = torch.softmax(outputs, dim=1)
             predicted_class = torch.argmax(probabilities, dim=1).item()
             confidence = probabilities[0][predicted_class].item()
-            
+
         threat_class = label_encoder.inverse_transform([predicted_class])[0]
         all_probabilities = {
-            label_encoder.classes_[i]: probabilities[0][i].item() 
+            label_encoder.classes_[i]: probabilities[0][i].item()
             for i in range(len(label_encoder.classes_))
         }
-        
+
         return threat_class, confidence, all_probabilities
+
     else:
-        # Simulation mode for demo
-        feature_array = np.array(features)
-        
-        # Simple heuristic-based classification for demo
-        if feature_array[3] > 10000:  # High rate
-            if feature_array[14] > 100:  # High syn_count
-                return "DDoS", 0.97, {"Benign": 0.03, "DDoS": 0.97}
-            else:
-                return "Port_Scan", 0.89, {"Benign": 0.11, "Port_Scan": 0.89}
-        elif feature_array[3] < 200:  # Low rate, long duration
-            return "Malware", 0.85, {"Benign": 0.15, "Malware": 0.85}
+        # Demo/simulation mode: generate randomized predictions influenced by features
+        probs = _randomized_probabilities(features, label_encoder, FEATURE_NAMES, randomness=0.30)
+
+        # Make predicted class by sampling from the distribution (adds randomness)
+        sampled_idx = int(np.random.choice(len(probs), p=probs))
+        predicted_label = label_encoder.inverse_transform([sampled_idx])[0]
+        confidence = float(probs[sampled_idx])
+
+        all_probabilities = {label_encoder.classes_[i]: float(probs[i]) for i in range(len(probs))}
+        return predicted_label, confidence, all_probabilities
+
+@st.cache_resource
+def load_model_and_preprocessors():
+    """
+    Attempts to load scaler, label encoder and model. If files are missing, creates safe fallbacks.
+    Returns: model, scaler, label_encoder, device, use_real_model
+    """
+    base = os.path.dirname(__file__)  # folder containing the app file
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Helper to create fallback label encoder & scaler from SAMPLE_DATA
+    def _fallback_from_sampledata():
+        df = pd.DataFrame([ {k: v for k, v in SAMPLE_DATA[s].items()} for s in SAMPLE_DATA ])
+        X = df[FEATURE_NAMES].values
+        scaler_local = StandardScaler().fit(X)
+        le_local = LabelEncoder().fit(["Benign", "DDoS", "Port_Scan", "Malware"])
+        return scaler_local, le_local, "built_from_SAMPLE_DATA"
+
+    # 1) try to load scaler + label_encoder directly
+    scaler = None
+    label_encoder = None
+    model = None
+    use_real_model = False
+    fallback_source = None
+
+    # Try common file names in order
+    possible_scaler_files = [
+        os.path.join(base, "scaler.pkl"),
+        os.path.join(base, "scaler_from_synth.pkl"),
+        os.path.join(base, "scaler_from_synth.pkl")
+    ]
+    possible_le_files = [
+        os.path.join(base, "label_encoder.pkl"),
+        os.path.join(base, "label_encoder_from_synth.pkl"),
+        os.path.join(base, "label_encoder_from_synth.pkl")
+    ]
+
+    # Try loading scaler
+    for sf in possible_scaler_files:
+        if os.path.exists(sf):
+            try:
+                scaler = joblib.load(sf)
+                fallback_source = f"loaded_scaler:{os.path.basename(sf)}"
+                break
+            except Exception:
+                scaler = None
+
+    # Try loading label encoder
+    for lf in possible_le_files:
+        if os.path.exists(lf):
+            try:
+                label_encoder = joblib.load(lf)
+                fallback_source = (fallback_source or "") + f", loaded_label_encoder:{os.path.basename(lf)}"
+                break
+            except Exception:
+                label_encoder = None
+
+    # If either missing, try to infer from train_features.csv
+    train_csv_path = os.path.join(base, "train_features.csv")
+    if (scaler is None or label_encoder is None) and os.path.exists(train_csv_path):
+        try:
+            df_train = pd.read_csv(train_csv_path)
+            # Ensure columns exist
+            if set(FEATURE_NAMES).issubset(set(df_train.columns)):
+                X_train = df_train[FEATURE_NAMES].values
+                scaler = StandardScaler().fit(X_train) if scaler is None else scaler
+                if 'Label' in df_train.columns and label_encoder is None:
+                    le_tmp = LabelEncoder().fit(df_train['Label'].values)
+                    label_encoder = le_tmp
+                fallback_source = (fallback_source or "") + ", loaded_from_train_csv"
+        except Exception:
+            pass
+
+    # If still missing, fallback to sample data creation
+    if scaler is None or label_encoder is None:
+        scaler, label_encoder, src = _fallback_from_sampledata()
+        fallback_source = (fallback_source or "") + f", {src}"
+
+    # Now attempt to load model state dict; if missing we still return a model instance (random init)
+    try:
+        num_features = len(FEATURE_NAMES)
+        num_classes = len(label_encoder.classes_)
+        model = LightweightANN(num_features, num_classes)
+        model_path = os.path.join(base, 'best_model.pth')
+        if os.path.exists(model_path):
+            try:
+                model.load_state_dict(torch.load(model_path, map_location=device))
+                model.eval()
+                use_real_model = True
+                fallback_source = (fallback_source or "") + f", loaded_model:{os.path.basename(model_path)}"
+            except Exception as e:
+                # Leave model as random-init but continue
+                model = LightweightANN(num_features, num_classes)
+                use_real_model = False
+                fallback_source = (fallback_source or "") + f", model_load_failed:{str(e)[:80]}"
         else:
-            return "Benign", 0.94, {"Benign": 0.94, "DDoS": 0.03, "Port_Scan": 0.02, "Malware": 0.01}
+            use_real_model = False
+            fallback_source = (fallback_source or "") + ", no_model_file"
+    except Exception as e:
+        # ultimate fallback: create minimal model & encoders
+        scaler, label_encoder, src = _fallback_from_sampledata()
+        num_features = len(FEATURE_NAMES)
+        num_classes = len(label_encoder.classes_)
+        model = LightweightANN(num_features, num_classes)
+        use_real_model = False
+        fallback_source = (fallback_source or "") + f", fallback_exception:{str(e)[:80]}"
+
+    return model, scaler, label_encoder, device, use_real_model, fallback_source
 
 def main():
     # Header
@@ -233,70 +389,78 @@ def main():
     """, unsafe_allow_html=True)
 
     # Load model and preprocessors
-    model, scaler, label_encoder, device, use_real_model = load_model_and_preprocessors()
-    
+    # NOTE: load_model_and_preprocessors now returns an extra 'fallback_source' for debugging
+    loaded = load_model_and_preprocessors()
+    if len(loaded) == 6:
+        model, scaler, label_encoder, device, use_real_model, fallback_source = loaded
+    else:
+        # backward compatibility (shouldn't happen)
+        model, scaler, label_encoder, device, use_real_model = loaded
+        fallback_source = "unknown"
+
     # Model status indicator
     if use_real_model:
         st.success("✅ **Real Model Loaded** - Using trained LightweightANN model")
     else:
         st.info("🔄 **Demo Mode** - Using simulated predictions (place model files in app directory)")
+        st.caption(f"Preprocessor/Model source: {fallback_source}")
 
     # Sidebar for sample data
     st.sidebar.header("🚀 Quick Test")
     st.sidebar.markdown("Select sample data for instant analysis:")
-    
+
     selected_sample = st.sidebar.selectbox(
         "Choose Sample Traffic:",
         list(SAMPLE_DATA.keys()),
         help="Pre-configured network traffic patterns for testing"
     )
-    
+
     if st.sidebar.button("🔍 Load Sample Data", type="primary"):
         st.session_state.update(SAMPLE_DATA[selected_sample])
         st.sidebar.success(f"Loaded {selected_sample} data!")
 
     # Main content area
     col1, col2 = st.columns([2, 1])
-    
+
     with col1:
         st.header("📊 Network Traffic Feature Input")
-        
+
         # Feature input sections
         feature_values = {}
-        
+
         # Network Features
         with st.expander("🌐 Network Features", expanded=True):
             col_net1, col_net2, col_net3 = st.columns(3)
             with col_net1:
                 feature_values['Header_Length'] = st.number_input(
-                    "Header Length", 
+                    "Header Length",
                     value=st.session_state.get('Header_Length', 20),
                     min_value=0, max_value=1500, help="Packet header length in bytes"
                 )
                 feature_values['Protocol_Type'] = st.number_input(
-                    "Protocol Type", 
+                    "Protocol Type",
                     value=st.session_state.get('Protocol_Type', 6),
                     min_value=0, max_value=255, help="IP protocol number (6=TCP, 17=UDP)"
                 )
             with col_net2:
                 feature_values['Duration'] = st.number_input(
-                    "Duration", 
+                    "Duration",
                     value=st.session_state.get('Duration', 0.5),
                     min_value=0.0, format="%.6f", help="Connection duration in seconds"
                 )
                 feature_values['Rate'] = st.number_input(
-                    "Rate", 
+                    "Rate",
                     value=st.session_state.get('Rate', 1000),
                     min_value=0, help="Packets per second"
                 )
             with col_net3:
                 feature_values['Srate'] = st.number_input(
-                    "Source Rate", 
+                    "Source Rate",
                     value=st.session_state.get('Srate', 500),
                     min_value=0, help="Source bytes per second"
                 )
                 feature_values['Drate'] = st.number_input(
-                    "Destination Rate", 
+                    "Destination Rate",
                     value=st.session_state.get('Drate', 500),
                     min_value=0, help="Destination bytes per second"
                 )
@@ -306,7 +470,7 @@ def main():
             col_flag1, col_flag2 = st.columns(2)
             tcp_flags = ['fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
                         'ack_flag_number', 'ece_flag_number', 'cwr_flag_number']
-            
+
             for i, flag in enumerate(tcp_flags):
                 col = col_flag1 if i % 2 == 0 else col_flag2
                 with col:
@@ -321,7 +485,7 @@ def main():
         with st.expander("📈 Connection Counts"):
             col_count1, col_count2 = st.columns(2)
             counts = ['ack_count', 'syn_count', 'fin_count', 'rst_count']
-            
+
             for i, count in enumerate(counts):
                 col = col_count1 if i % 2 == 0 else col_count2
                 with col:
@@ -335,7 +499,7 @@ def main():
         with st.expander("🔗 Protocol Types"):
             protocols = ['HTTP', 'HTTPS', 'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC',
                         'TCP', 'UDP', 'DHCP', 'ARP', 'ICMP', 'IGMP', 'IPv', 'LLC']
-            
+
             col_prot1, col_prot2, col_prot3 = st.columns(3)
             for i, protocol in enumerate(protocols):
                 col = [col_prot1, col_prot2, col_prot3][i % 3]
@@ -351,7 +515,7 @@ def main():
         with st.expander("📊 Statistical Features"):
             stats = ['Tot_sum', 'Min', 'Max', 'AVG', 'Std', 'Tot_size', 'IAT',
                     'Number', 'Magnitude', 'Radius', 'Covariance', 'Variance', 'Weight']
-            
+
             col_stat1, col_stat2, col_stat3 = st.columns(3)
             for i, stat in enumerate(stats):
                 col = [col_stat1, col_stat2, col_stat3][i % 3]
@@ -364,18 +528,18 @@ def main():
 
     with col2:
         st.header("🎯 Analysis Results")
-        
+
         # Analysis button
         if st.button("🔍 Analyze Network Traffic", type="primary", use_container_width=True):
             with st.spinner("🧠 AI Model Processing..."):
                 # Prepare features in correct order
                 features = [feature_values[name] for name in FEATURE_NAMES]
-                
+
                 # Make prediction
                 threat_class, confidence, all_probabilities = predict_threat(
                     features, model, scaler, label_encoder, device, use_real_model
                 )
-                
+
                 # Store results in session state
                 st.session_state.prediction_results = {
                     'threat_class': threat_class,
@@ -386,7 +550,7 @@ def main():
         # Display results if available
         if hasattr(st.session_state, 'prediction_results'):
             results = st.session_state.prediction_results
-            
+
             # Threat classification card
             if results['threat_class'].lower() in ['benign', 'normal']:
                 st.markdown(f"""
@@ -438,10 +602,10 @@ def main():
                 columns=['Threat Class', 'Probability']
             )
             prob_df['Probability'] = prob_df['Probability'] * 100
-            
+
             prob_fig = px.bar(
-                prob_df, 
-                x='Threat Class', 
+                prob_df,
+                x='Threat Class',
                 y='Probability',
                 color='Probability',
                 color_continuous_scale='RdYlGn_r',
@@ -482,14 +646,14 @@ def main():
                     "📞 Contact security team",
                     "📊 Perform detailed traffic analysis"
                 ]
-            
+
             for rec in recommendations:
                 st.markdown(f"- {rec}")
 
     # Footer with model information
     st.markdown("---")
     col_info1, col_info2, col_info3 = st.columns(3)
-    
+
     with col_info1:
         st.markdown("""
         **🧠 Model Architecture**
@@ -498,7 +662,7 @@ def main():
         - Output: Multi-class classification
         - Framework: PyTorch
         """)
-    
+
     with col_info2:
         st.markdown("""
         **📊 Training Dataset**
@@ -507,7 +671,7 @@ def main():
         - Multiple threat categories
         - Balanced class weights
         """)
-    
+
     with col_info3:
         st.markdown("""
         **🎯 Performance**

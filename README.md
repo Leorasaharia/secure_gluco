@@ -39,6 +39,8 @@ npm run dev
 ```
 
 The application will be available at `http://localhost:5173`
+-Deployed  Link: https://secure-gluco.vercel.app/
+-Backend Link: https://modelbackendai.streamlit.app/
 
 ## 🏗️ Project Structure
 
@@ -209,6 +211,7 @@ Place in `streamlit_app/`:
 
 ### 3. Generate Preprocessing Files
 
+
 ```python
 import pickle
 with open('scaler.pkl', 'wb') as f: pickle.dump(scaler, f)
@@ -218,9 +221,12 @@ print("✅ Preprocessing objects saved!")
 
 ### 4. Launch Application
 
+
 ```bash
 streamlit run cyber_threat_detection_app.py
 ```
+
+#### Backend : https://modelbackendai.streamlit.app/
 
 ## 🎯 Features
 

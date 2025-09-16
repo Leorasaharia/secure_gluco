@@ -5,16 +5,32 @@ interface HeaderProps {
   activeAlerts: number;
   onSettingsClick: () => void;
   onAlertsClick: () => void;
+  userName: string;
+  loginTime: Date;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeAlerts, onSettingsClick, onAlertsClick }) => {
+function getInitials(name: string) {
+  return name
+    ? name.split(" ").map(n => n[0]).join("").toUpperCase()
+    : "P";
+}
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  activeAlerts,
+  onSettingsClick,
+  onAlertsClick,
+  userName,
+  loginTime
+}) => {
   const handleSettingsClick = () => {
-    console.log('Header settings button clicked');
     onSettingsClick();
   };
 
   const handleAlertsClick = () => {
-    console.log('Header alerts button clicked');
     onAlertsClick();
   };
 
@@ -72,11 +88,11 @@ export const Header: React.FC<HeaderProps> = ({ activeAlerts, onSettingsClick, o
             {/* Profile */}
             <div className="flex items-center space-x-3">
               <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">Patient Dashboard</p>
-                <p className="text-xs text-gray-500">Last sync: 2 min ago</p>
+                <p className="text-sm font-medium text-gray-900">{userName}</p>
+                <p className="text-xs text-gray-500">Last sync: {formatTime(loginTime)}</p>
               </div>
               <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-sm font-medium text-blue-600">P</span>
+                <span className="text-sm font-medium text-blue-600">{getInitials(userName)}</span>
               </div>
             </div>
           </div>

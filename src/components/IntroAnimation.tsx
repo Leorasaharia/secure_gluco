@@ -1,4 +1,3 @@
-// IntroAnimation.tsx
 import {
   Activity,
   ChevronRight,
@@ -10,11 +9,11 @@ import {
   Zap
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { GoogleLogin } from '@react-oauth/google';
+import { jwtDecode } from "jwt-decode";
 
 interface IntroLandingProps {
-  onComplete: () => void;
-  /** Optional: show the landing immediately without animation */
+  onComplete: (name?: string) => void;
   skipAnimationInitially?: boolean;
 }
 
@@ -22,24 +21,16 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
   onComplete,
   skipAnimationInitially = false
 }) => {
-  const navigate = useNavigate();
-
-  // phases:
-  // 0 = hidden / initial
-  // 1 = chip appears
-  // 2 = circuits appear
-  // 3 = data streams + icons
-  // 4 = reveal text / CTA
   const [phase, setPhase] = useState<number>(0);
   const [showSkip, setShowSkip] = useState<boolean>(false);
   const [showAbout, setShowAbout] = useState<boolean>(false);
+  const [showGoogleSignIn, setShowGoogleSignIn] = useState<boolean>(false);
   const prefersReducedMotion = usePrefersReducedMotion();
 
-  // Derived: whether to auto-progress animation (skip if user opt-out)
   const animationTimings = useMemo(
     () =>
       prefersReducedMotion
-        ? [0, 200, 400, 600, 800, 900] // compressed
+        ? [0, 200, 400, 600, 800, 900]
         : [0, 1000, 2500, 4000, 5500, 7000],
     [prefersReducedMotion]
   );
@@ -51,7 +42,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
       return;
     }
 
-    // schedule phases
     const timers: number[] = [];
     animationTimings.forEach((delay, i) => {
       timers.push(
@@ -61,12 +51,10 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
       );
     });
 
-    // show skip after short delay (or shorter if reduced motion)
     const skipDelay = prefersReducedMotion ? 200 : 2000;
     const skipTimer = window.setTimeout(() => setShowSkip(true), skipDelay);
     timers.push(skipTimer);
 
-    // auto-advance to about screen after full animation + small pause
     const finalDelay = (animationTimings[animationTimings.length - 1] || 7000) + 1000;
     const finishTimer = window.setTimeout(() => {
       setPhase(5);
@@ -77,19 +65,33 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
     return () => timers.forEach((t) => clearTimeout(t));
   }, [animationTimings, skipAnimationInitially, prefersReducedMotion]);
 
-  // Skip/complete handlers
   const handleSkip = () => {
     setPhase(5);
     setShowAbout(true);
   };
 
   const handleEnter = () => {
-    onComplete();
+    setShowGoogleSignIn(true);
+  };
+
+  const handleGoogleSuccess = (credentialResponse: any) => {
+    setShowGoogleSignIn(false);
+    if (credentialResponse.credential) {
+      const decoded: any = jwtDecode(credentialResponse.credential);
+      const userName = decoded.name || "Patient";
+      onComplete(userName); // Pass name up to App
+    } else {
+      onComplete();
+    }
+  };
+
+  const handleGoogleError = () => {
+    setShowGoogleSignIn(false);
+    alert("Google sign-in failed. Please try again.");
   };
 
   const goToAbout = () => {
-    // navigate to the AboutPage route
-    navigate("/about");
+    window.location.href = "/about";
   };
 
   return (
@@ -97,7 +99,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
       className="fixed inset-0 z-50 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800 text-white overflow-auto"
       aria-live="polite"
     >
-      {/* Top-right skip */}
       {showSkip && !showAbout && (
         <div className="absolute top-6 right-6 z-50">
           <button
@@ -110,9 +111,25 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
         </div>
       )}
 
-      {/* Main center area (animation) */}
+      {showGoogleSignIn && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 shadow-xl flex flex-col items-center">
+            <h2 className="text-xl font-semibold mb-4 text-slate-900">Sign in with Google</h2>
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+            />
+            <button
+              className="mt-6 text-sm text-blue-600 hover:underline"
+              onClick={() => setShowGoogleSignIn(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="min-h-screen flex items-center justify-center px-6 py-12 relative">
-        {/* BACKGROUND subtle grid */}
         <div
           className="absolute inset-0 opacity-20 pointer-events-none"
           style={{
@@ -124,13 +141,10 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
           }}
         />
 
-        {/* floating particles */}
         <ParticleCloud visible={phase >= 1} count={20} />
 
-        {/* Chip + Streams Panel */}
         <div className="relative w-full max-w-5xl">
           <div className="mx-auto relative">
-            {/* Chip container */}
             <div
               className={`relative mx-auto transition-all duration-1000 ease-out transform ${
                 phase >= 1 ? "opacity-100 scale-100" : "opacity-0 scale-75"
@@ -140,7 +154,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
               <ChipVisual phase={phase} prefersReducedMotion={prefersReducedMotion} />
             </div>
 
-            {/* Data streams + icons overlay */}
             <div className="relative mt-8">
               <div
                 className={`w-full flex items-center justify-center transition-opacity duration-700 ${
@@ -167,7 +180,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
               </div>
             </div>
 
-            {/* Title / CTA that appears after phase 4 */}
             <div className={`mt-10 text-center transition-all duration-700 ${phase >= 4 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
               <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-300 to-purple-300 bg-clip-text text-transparent">
                 SecureGluco
@@ -180,7 +192,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
         </div>
       </div>
 
-      {/* ABOUT / Landing panel that appears after animation finishes */}
       <div
         className={`bg-gradient-to-t from-transparent to-black/30 border-t border-black/20 w-full transition-all duration-700 ${
           showAbout ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6 pointer-events-none"
@@ -188,7 +199,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
       >
         <div className="max-w-6xl mx-auto px-6 py-12 lg:py-16">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-            {/* Left: product overview */}
             <section>
               <h2 className="text-3xl font-semibold">About SecureGluco</h2>
               <p className="mt-4 text-slate-300 max-w-xl">
@@ -212,7 +222,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
                 </button>
               </div>
 
-              {/* quick facts */}
               <div className="mt-8 grid grid-cols-2 gap-4 max-w-xl">
                 <MiniStat title="Latency" value="sub-500ms" icon={<Activity className="w-5 h-5 text-emerald-300" />} />
                 <MiniStat title="Model Size" value="~2.2 MB" icon={<GitBranch className="w-5 h-5 text-blue-300" />} />
@@ -221,7 +230,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
               </div>
             </section>
 
-            {/* Right: team / contact */}
             <aside className="bg-white/5 rounded-xl p-6">
               <h3 className="text-xl font-semibold">Team & Contact</h3>
               <p className="mt-3 text-slate-300">
@@ -265,7 +273,6 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
             </aside>
           </div>
 
-          {/* More details / features section */}
           <div id="more-details" className="mt-12 bg-white/3 rounded-xl p-6">
             <h4 className="text-2xl font-semibold">Core Capabilities</h4>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -292,13 +299,9 @@ export const IntroAnimation: React.FC<IntroLandingProps> = ({
   );
 };
 
-/* --------------------
-   Helper subcomponents
-   -------------------- */
-
 function usePrefersReducedMotion() {
   const [prefers, setPrefers] = useState<boolean>(false);
-  useEffect(() => {
+  React.useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     setPrefers(mq.matches);
@@ -306,7 +309,6 @@ function usePrefersReducedMotion() {
     try {
       mq.addEventListener("change", handler);
     } catch {
-      // Safari fallback
       (mq as any).addListener(handler);
     }
     return () => {
@@ -345,7 +347,6 @@ const ChipVisual: React.FC<{ phase: number; prefersReducedMotion: boolean }> = (
     <div className="relative w-full flex items-center justify-center">
       <div className={`relative w-80 h-80 rounded-2xl border border-slate-700 shadow-2xl transform ${phase >= 1 ? "scale-100" : "scale-75"} transition-transform duration-700`}>
         <div className={`absolute inset-4 rounded-xl bg-gradient-to-br from-slate-700 to-slate-800 ${glow} `}>
-          {/* circuit lines */}
           <div className="absolute inset-0">
             {[...Array(6)].map((_, i) => (
               <div
@@ -362,8 +363,6 @@ const ChipVisual: React.FC<{ phase: number; prefersReducedMotion: boolean }> = (
               />
             ))}
           </div>
-
-          {/* center sensor */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className={`w-16 h-16 rounded-lg shadow-lg ${phase >= 2 ? "scale-100 opacity-100" : "scale-75 opacity-0"} transition-all duration-700 bg-gradient-to-br from-blue-500 to-purple-600`}>
               <div className="absolute inset-2 rounded bg-cyan-400/40" />
@@ -371,14 +370,11 @@ const ChipVisual: React.FC<{ phase: number; prefersReducedMotion: boolean }> = (
             </div>
           </div>
         </div>
-
         <div className="absolute inset-0 rounded-3xl border-2 border-slate-500/20 backdrop-blur-sm" />
         <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 text-xs font-mono text-slate-300 opacity-80">
           CGM-BIOMEMS-2025
         </div>
       </div>
-
-      {/* data rings when phase >= 3 */}
       {phase >= 3 && (
         <div className="absolute inset-0 pointer-events-none">
           {[...Array(3)].map((_, i) => (

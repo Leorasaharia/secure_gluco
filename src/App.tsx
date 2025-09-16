@@ -18,8 +18,7 @@ import {
   mockSecurityThreats
 } from './utils/mockData';
 
-function DashboardApp() {
-  const [showIntro, setShowIntro] = useState(true);
+function DashboardApp({ userName, loginTime }: { userName: string, loginTime: Date }) {
   const [glucoseData, setGlucoseData] = useState<GlucoseReading[]>([]);
   const [pumpStatus, setPumpStatus] = useState<InsulinPumpStatus>(mockInsulinPumpStatus);
   const [threats, setThreats] = useState<SecurityThreat[]>(mockSecurityThreats);
@@ -28,47 +27,55 @@ function DashboardApp() {
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [showThreatDetection, setShowThreatDetection] = useState(false);
 
-  // Initialize glucose data
+  // ✅ Added lastSync state to track latest sync time
+  const [lastSync, setLastSync] = useState<Date>(loginTime);
+
   useEffect(() => {
-    if (!showIntro) {
-      const data = generateGlucoseData(24);
-      setGlucoseData(data);
+    setLastSync(new Date()); // set initial sync time
+    const syncInterval = setInterval(() => {
+      setLastSync(new Date());
+    }, 30000); // refresh every 30s
+    return () => clearInterval(syncInterval);
+  }, []);
 
-      const interval = setInterval(() => {
-        const lastReading = data[data.length - 1];
-        const newValue = Math.max(50, Math.min(400, 
-          lastReading.value + (Math.random() - 0.5) * 10
-        ));
-        
-        const newReading: GlucoseReading = {
+  useEffect(() => {
+    const data = generateGlucoseData(24);
+    setGlucoseData(data);
+
+    const interval = setInterval(() => {
+      const lastReading = data[data.length - 1];
+      const newValue = Math.max(50, Math.min(400, 
+        lastReading.value + (Math.random() - 0.5) * 10
+      ));
+      
+      const newReading: GlucoseReading = {
+        timestamp: new Date(),
+        value: Math.round(newValue),
+        trend: newValue > lastReading.value + 2 ? 'rising' : 
+               newValue < lastReading.value - 2 ? 'falling' : 'stable'
+      };
+
+      setGlucoseData(prev => [...prev.slice(1), newReading]);
+
+      if (newReading.value < 70 || newReading.value > 250) {
+        const newAlert: Alert = {
+          id: Date.now().toString(),
+          type: 'glucose',
+          severity: newReading.value < 54 || newReading.value > 300 ? 'critical' : 'warning',
+          title: newReading.value < 70 ? 'Low Glucose Alert' : 'High Glucose Alert',
+          message: `Current glucose: ${newReading.value} mg/dL - ${
+            newReading.value < 70 ? 'Take action immediately' : 'Consider corrective action'
+          }`,
           timestamp: new Date(),
-          value: Math.round(newValue),
-          trend: newValue > lastReading.value + 2 ? 'rising' : 
-                 newValue < lastReading.value - 2 ? 'falling' : 'stable'
+          dismissed: false
         };
+        
+        setAlerts(prev => [newAlert, ...prev]);
+      }
+    }, 30000);
 
-        setGlucoseData(prev => [...prev.slice(1), newReading]);
-
-        if (newReading.value < 70 || newReading.value > 250) {
-          const newAlert: Alert = {
-            id: Date.now().toString(),
-            type: 'glucose',
-            severity: newReading.value < 54 || newReading.value > 300 ? 'critical' : 'warning',
-            title: newReading.value < 70 ? 'Low Glucose Alert' : 'High Glucose Alert',
-            message: `Current glucose: ${newReading.value} mg/dL - ${
-              newReading.value < 70 ? 'Take action immediately' : 'Consider corrective action'
-            }`,
-            timestamp: new Date(),
-            dismissed: false
-          };
-          
-          setAlerts(prev => [newAlert, ...prev]);
-        }
-      }, 30000);
-
-      return () => clearInterval(interval);
-    }
-  }, [showIntro]);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSuspendDelivery = () => {
     setPumpStatus(prev => ({ ...prev, isDelivering: false }));
@@ -131,23 +138,18 @@ function DashboardApp() {
     setAlerts(prev => prev.map(alert => alert.id === alertId ? { ...alert, dismissed: true } : alert));
   };
 
-  const handleIntroComplete = () => {
-    setShowIntro(false);
-  };
-
   const activeAlerts = alerts.filter(alert => !alert.dismissed);
   const currentReading = glucoseData[glucoseData.length - 1];
 
-  if (showIntro) {
-    return <IntroAnimation onComplete={handleIntroComplete} />;
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* ✅ using lastSync instead of loginTime */}
       <Header 
         activeAlerts={activeAlerts.length}
         onSettingsClick={() => setIsSettingsPanelOpen(true)}
         onAlertsClick={() => setIsAlertPanelOpen(true)}
+        userName={userName}
+        loginTime={lastSync}
       />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -189,10 +191,29 @@ function DashboardApp() {
 }
 
 function App() {
+  const [showIntro, setShowIntro] = useState(true);
+  const [userName, setUserName] = useState("Patient");
+  const [loginTime, setLoginTime] = useState<Date>(new Date());
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<DashboardApp />} />
+        <Route
+          path="/"
+          element={
+            showIntro ? (
+              <IntroAnimation
+                onComplete={(name?: string) => {
+                  setShowIntro(false);
+                  if (name) setUserName(name);
+                  setLoginTime(new Date());
+                }}
+              />
+            ) : (
+              <DashboardApp userName={userName} loginTime={loginTime} />
+            )
+          }
+        />
         <Route path="/about" element={<AboutPage />} />
       </Routes>
     </BrowserRouter>

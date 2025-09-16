@@ -1,6 +1,6 @@
+import { AlertCircle, Calendar, Target, TrendingUp } from 'lucide-react';
 import React, { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Calendar, TrendingUp, Target, AlertCircle } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { GlucoseReading, TimeRange } from '../types';
 
 interface HistoricalDataProps {

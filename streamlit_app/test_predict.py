@@ -19,6 +19,18 @@ for c in candidates:
     except Exception:
         app_mod = None
 
+# defaults (used if app_mod import fails or values missing)
+DEFAULT_FEATURE_NAMES = [
+    'Header_Length', 'Protocol_Type', 'Duration', 'Rate', 'Srate', 'Drate',
+    'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
+    'ack_flag_number', 'ece_flag_number', 'cwr_flag_number',
+    'ack_count', 'syn_count', 'fin_count', 'rst_count',
+    'HTTP', 'HTTPS', 'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC',
+    'TCP', 'UDP', 'DHCP', 'ARP', 'ICMP', 'IGMP', 'IPv', 'LLC',
+    'Tot_sum', 'Min', 'Max', 'AVG', 'Std', 'Tot_size', 'IAT',
+    'Number', 'Magnitude', 'Radius', 'Covariance', 'Variance', 'Weight'
+]
+
 if app_mod is not None:
     try:
         load_model_and_preprocessors = getattr(app_mod, "load_model_and_preprocessors")
@@ -27,21 +39,12 @@ if app_mod is not None:
     except Exception:
         app_mod = None
 
-# Fallback implementations if app import failed
+# If import failed, provide fallback implementations (same as earlier)
 if app_mod is None:
     import torch
     import torch.nn as nn
 
-    FEATURE_NAMES = [
-        'Header_Length', 'Protocol_Type', 'Duration', 'Rate', 'Srate', 'Drate',
-        'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
-        'ack_flag_number', 'ece_flag_number', 'cwr_flag_number',
-        'ack_count', 'syn_count', 'fin_count', 'rst_count',
-        'HTTP', 'HTTPS', 'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC',
-        'TCP', 'UDP', 'DHCP', 'ARP', 'ICMP', 'IGMP', 'IPv', 'LLC',
-        'Tot_sum', 'Min', 'Max', 'AVG', 'Std', 'Tot_size', 'IAT',
-        'Number', 'Magnitude', 'Radius', 'Covariance', 'Variance', 'Weight'
-    ]
+    FEATURE_NAMES = DEFAULT_FEATURE_NAMES.copy()
 
     class LightweightANN(nn.Module):
         def __init__(self, input_size, num_classes):
@@ -69,32 +72,22 @@ if app_mod is None:
         num_classes = len(label_encoder.classes_)
         model = LightweightANN(num_features, num_classes)
         device = "cpu"
-        # fallback returns model with default random weights
         return model, scaler, label_encoder, device, False
 
     def _fallback_probs_from_features(features, label_encoder):
-        """
-        Deterministic scoring fallback that maps features -> soft probabilities.
-        Uses Rate, syn_count, duration, rst_count heuristics to shape the distribution.
-        """
-        # Simple feature extraction (safe indexes by FEATURE_NAMES)
         f = dict(zip(FEATURE_NAMES, features))
         rate = float(f.get("Rate", 0.0))
         syn = float(f.get("syn_count", 0.0))
         rst = float(f.get("rst_count", 0.0))
         duration = float(f.get("Duration", 0.0))
 
-        # heuristic scores (0..1)
         s_ddos = min(1.0, (rate / 50000.0) + (syn / 2000.0))
         s_port = min(1.0, (syn / 500.0) + (rst / 300.0))
         s_malware = min(1.0, (duration / 60.0) + max(0, (500 - rate) / 10000.0))
 
-        # base benign score inverse of suspiciousness
         s_benign = max(0.0, 1.0 - 0.6 * s_ddos - 0.5 * s_port - 0.5 * s_malware)
-        # ensure non-negative
         s_benign = max(0.0, s_benign)
 
-        # assemble raw scores aligned with label_encoder.classes_
         classes = list(label_encoder.classes_)
         raw = []
         for cl in classes:
@@ -108,10 +101,8 @@ if app_mod is None:
             elif "benign" in cl_l or "normal" in cl_l:
                 raw.append(s_benign + 0.6)
             else:
-                # neutral small score for unknown labels
                 raw.append(0.01)
 
-        # normalize to probabilities
         raw = np.array(raw, dtype=float)
         if raw.sum() == 0:
             probs = np.ones_like(raw) / len(raw)
@@ -120,9 +111,7 @@ if app_mod is None:
         return probs
 
     def predict_threat(features, model, scaler, label_encoder, device, use_real_model):
-        # use scaler + placeholder model path for API compatibility
         features_scaled = scaler.transform([features])
-        # try using the model for a prediction path (if torch available)
         try:
             import torch
             features_tensor = torch.tensor(features_scaled, dtype=torch.float32)
@@ -132,19 +121,81 @@ if app_mod is None:
                 predicted_class = int(np.argmax(probabilities))
                 confidence = float(probabilities[predicted_class])
                 threat_class = label_encoder.inverse_transform([predicted_class])[0]
-                all_probabilities = {label_encoder.classes_[i]: float(probabilities[i]) for i in range(len(label_encoder.classes_))}
+                all_probabilities = {
+                    label_encoder.classes_[i]: float(probabilities[i])
+                    for i in range(len(label_encoder.classes_))
+                }
                 return threat_class, confidence, all_probabilities
         except Exception:
-            # fallback deterministic heuristic that yields different outputs per sample
             probs = _fallback_probs_from_features(features, label_encoder)
             pred_idx = int(np.argmax(probs))
-            return label_encoder.inverse_transform([pred_idx])[0], float(probs[pred_idx]), {label_encoder.classes_[i]: float(probs[i]) for i in range(len(probs))}
+            return (
+                label_encoder.inverse_transform([pred_idx])[0],
+                float(probs[pred_idx]),
+                {label_encoder.classes_[i]: float(probs[i]) for i in range(len(probs))}
+            )
 
+# -------------------------------
+# Normalize FEATURE_NAMES (fix for 'set' case and other wrong types)
+# -------------------------------
+try:
+    if not isinstance(FEATURE_NAMES, (list, tuple)):
+        # If it's a set (or other), convert to list in deterministic order
+        if isinstance(FEATURE_NAMES, set):
+            print("WARNING: FEATURE_NAMES imported as set — converting to sorted list (order may differ).")
+            FEATURE_NAMES = sorted(list(FEATURE_NAMES))
+        else:
+            # if it's something unexpected, try list() conversion then fallback to default
+            try:
+                FEATURE_NAMES = list(FEATURE_NAMES)
+            except Exception:
+                print("WARNING: FEATURE_NAMES has unexpected type; falling back to default feature ordering.")
+                FEATURE_NAMES = DEFAULT_FEATURE_NAMES.copy()
+except NameError:
+    FEATURE_NAMES = DEFAULT_FEATURE_NAMES.copy()
 
-# load model & preprocessors via loader (or fallback)
-model, scaler, label_encoder, device, use_real_model = load_model_and_preprocessors()
+# Ensure FEATURE_NAMES is a list now
+FEATURE_NAMES = list(FEATURE_NAMES)
 
-# Print debug info so user knows which path ran and model size
+# -------------------------------
+# Robust loader unpacking (supports 4/5/6 returns)
+# -------------------------------
+res = load_model_and_preprocessors()
+# print raw loader response once for debugging (helpful to see what your real loader returns)
+print("DEBUG: loader returned (raw):", type(res), getattr(res, "__len__", lambda: "no-len")())
+# if it's a container, print content type summary (avoid dumping huge objects)
+try:
+    if isinstance(res, (list, tuple)) and len(res) <= 6:
+        print("DEBUG: loader returned values types:", [type(x) for x in res])
+except Exception:
+    pass
+
+if not isinstance(res, (tuple, list)):
+    model = res
+    scaler = None
+    label_encoder = None
+    device = "cpu"
+    use_real_model = True
+else:
+    ln = len(res)
+    if ln == 5:
+        model, scaler, label_encoder, device, use_real_model = res
+    elif ln == 6:
+        model, scaler, label_encoder, device, use_real_model, _ = res
+    elif ln == 4:
+        model, scaler, label_encoder, device = res
+        use_real_model = False
+    elif ln == 1:
+        model = res[0]
+        scaler = None
+        label_encoder = None
+        device = "cpu"
+        use_real_model = True
+    else:
+        # show the types/summary for debugging
+        print("DEBUG: unexpected loader return (len=%d). Types:" % ln, [type(x) for x in res])
+        raise ValueError(f"Unexpected return shape from load_model_and_preprocessors(): length={ln}. Returned: {res}")
+
 print("use_real_model =", bool(use_real_model))
 try:
     import torch
@@ -153,7 +204,7 @@ try:
 except Exception:
     print("model parameter count: unavailable")
 
-# Build samples as dicts keyed by feature names (ensures correct ordering)
+# --- Sample data dicts (complete) ---
 SAMPLE_DICTS = {
     "Benign": {
         'Header_Length':20,'Protocol_Type':6,'Duration':0.5,'Rate':1000,'Srate':500,'Drate':500,
@@ -229,11 +280,14 @@ SAMPLE_DICTS = {
 
 print("=== Running samples through predictor ===\n")
 for name, sample_dict in SAMPLE_DICTS.items():
+    # ensure FEATURE_NAMES is list and use dict.get safely
     sample_vec = [float(sample_dict.get(f, 0.0)) for f in FEATURE_NAMES]
     if len(sample_vec) != len(FEATURE_NAMES):
         print(f"Sample '{name}' has incorrect length ({len(sample_vec)} != {len(FEATURE_NAMES)}) - skipping")
         continue
-    threat_class, confidence, all_probabilities = predict_threat(sample_vec, model, scaler, label_encoder, device, use_real_model)
+    threat_class, confidence, all_probabilities = predict_threat(
+        sample_vec, model, scaler, label_encoder, device, use_real_model
+    )
     print(f"Sample: {name}")
     print(f"  Predicted class: {threat_class}")
     print(f"  Confidence: {confidence:.4f}")

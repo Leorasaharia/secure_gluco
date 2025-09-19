@@ -1,16 +1,101 @@
-// AboutPage.tsx
 import {
-    Activity,
-    AlertTriangle,
-    Database,
-    Heart,
-    Lock,
-    Mail,
-    Shield,
-    TrendingUp,
-    Zap
+  Activity,
+  AlertTriangle,
+  Database,
+  Heart,
+  Lock,
+  Mail,
+  Shield,
+  TrendingUp,
+  Zap
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
+
+// Gallery component included below — images/videos reference public paths
+
+const Gallery: React.FC = () => {
+  const media: { src: string; type: "image" | "video"; alt?: string }[] = [
+    { src: "/images/img1.jpeg", type: "image", alt: "Wearable chip closeup 1" },
+    { src: "/images/img2.jpeg", type: "image", alt: "Wearable chip closeup 2" },
+    { src: "/images/img3.jpeg", type: "image", alt: "Device + phone demo 1" },
+    { src: "/images/img4.jpeg", type: "image", alt: "Device + phone demo 2" },
+    { src: "/images/video1.mp4", type: "video" },
+    { src: "/images/video2.mp4", type: "video" }
+  ];
+
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  return (
+    <section className="mb-16">
+      <h2 className="text-3xl font-bold text-center mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
+        Demo Gallery
+      </h2>
+
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {media.map((m, i) => (
+            <button
+              key={i}
+              onClick={() => setActiveIndex(i)}
+              className="rounded-2xl overflow-hidden shadow-lg hover:scale-105 transition-transform bg-white/5"
+              aria-label={`Open media ${i + 1}`}
+            >
+              {m.type === "image" ? (
+                <img src={m.src} alt={m.alt || `media-${i}`} className="w-full h-56 object-cover" />
+              ) : (
+                <div className="w-full h-56 bg-black/30 flex items-center justify-center">
+                  <video src={m.src} className="w-full h-full object-cover" muted />
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Modal viewer */}
+        {activeIndex !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+            <div className="max-w-5xl w-full max-h-full bg-slate-900 rounded-2xl overflow-hidden">
+              <div className="flex justify-between items-center p-3 border-b border-white/10">
+                <div className="text-sm text-slate-300">Preview</div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setActiveIndex((ai) => (ai !== null ? Math.max(0, ai - 1) : null))}
+                    className="px-3 py-1 bg-white/5 rounded"
+                    aria-label="Previous"
+                  >
+                    ◀
+                  </button>
+                  <button
+                    onClick={() => setActiveIndex((ai) => (ai !== null ? Math.min(media.length - 1, ai + 1) : null))}
+                    className="px-3 py-1 bg-white/5 rounded"
+                    aria-label="Next"
+                  >
+                    ▶
+                  </button>
+                  <button
+                    onClick={() => setActiveIndex(null)}
+                    className="px-3 py-1 bg-red-600 rounded text-white"
+                    aria-label="Close"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 bg-black">
+                {media[activeIndex].type === "image" ? (
+                  <img src={media[activeIndex].src} alt={media[activeIndex].alt} className="w-full h-[70vh] object-contain" />
+                ) : (
+                  <video src={media[activeIndex].src} controls className="w-full h-[70vh] object-contain" />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
 
 const AboutPage: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -129,6 +214,9 @@ const AboutPage: React.FC = () => {
             />
           </div>
         </section>
+
+        {/* Insert Gallery here */}
+        <Gallery />
 
         {/* Case Study - Compact */}
         <section className={`mb-16 transition-all duration-1000 delay-500 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>

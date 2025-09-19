@@ -1,0 +1,10 @@
+{
+  "appId": "com.example.myapp",
+  "appName": "SecureGluco",
+  "webDir": "build",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://secure-gluco.vercel.app/",
+    "cleartext": false
+  }
+}

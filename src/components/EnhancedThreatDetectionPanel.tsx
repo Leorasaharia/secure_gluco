@@ -115,7 +115,7 @@ export const EnhancedThreatDetectionPanel: React.FC<ThreatDetectionPanelProps> =
             <h4 className="font-semibold text-yellow-800">API Bridge Disconnected</h4>
           </div>
           <p className="text-sm text-yellow-700 mt-1">
-            Cannot connect to Streamlit API bridge. Make sure the API bridge server is running on localhost:5000
+            Cannot connect to Streamlit API bridge. Check the API connection.
           </p>
           <button 
             onClick={checkConnection}

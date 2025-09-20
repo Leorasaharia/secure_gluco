@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle, Wifi, WifiOff } from 'lucide-react';
+import { apiService } from '../utils/streamlitAPI';
 
 interface StreamlitData {
   id: string;
@@ -25,22 +26,21 @@ export const StreamlitDataPanel: React.FC<StreamlitDataPanelProps> = ({ onThreat
   // Fetch data from API bridge
   const fetchData = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/threat-analysis');
-      const result = await response.json();
+      const result = await apiService.getLatestAnalysis();
       
-      if (result.status === 'success' && result.data) {
-        setStreamlitData(result.data);
-        setLastUpdate(new Date(result.data.timestamp));
+      if (result) {
+        setStreamlitData(result);
+        setLastUpdate(new Date(result.timestamp));
         setIsConnected(true);
         
         // Trigger threat alert if malicious
-        if (result.data.threat_class.toLowerCase() !== 'benign') {
+        if (result.threat_class.toLowerCase() !== 'benign') {
           onThreatDetected({
-            id: result.data.id,
-            type: result.data.threat_class.toLowerCase().includes('ddos') ? 'ddos_attack' : 'port_scan',
-            severity: result.data.risk_level.toLowerCase() === 'critical' ? 'critical' : 'warning',
-            timestamp: new Date(result.data.timestamp),
-            description: `${result.data.threat_class} detected - Confidence: ${(result.data.confidence * 100).toFixed(1)}%`,
+            id: result.id,
+            type: result.threat_class.toLowerCase().includes('ddos') ? 'ddos_attack' : 'port_scan',
+            severity: result.risk_level.toLowerCase() === 'critical' ? 'critical' : 'warning',
+            timestamp: new Date(result.timestamp),
+            description: `${result.threat_class} detected - Confidence: ${(result.confidence * 100).toFixed(1)}%`,
             status: 'active' as const,
             source: 'Streamlit AI Analysis'
           });

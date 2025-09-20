@@ -11,9 +11,29 @@ export interface StreamlitAnalysisData {
 }
 
 class SimpleAPIService {
-  private baseUrl = process.env.NODE_ENV === 'production' 
-    ? 'https://secure-gluco.onrender.com'  // Your Render URL
-    : 'http://localhost:5000';             // Local development
+  private baseUrl = this.getApiBaseUrl();
+  
+  private getApiBaseUrl(): string {
+    // Use Vite environment variable if available
+    if (import.meta.env.VITE_API_BASE_URL) {
+      console.log('Using env var API URL:', import.meta.env.VITE_API_BASE_URL);
+      return import.meta.env.VITE_API_BASE_URL;
+    }
+    
+    // Fallback: Check if we're in production (Vercel deployment)
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      console.log('Current hostname:', hostname);
+      if (hostname.includes('vercel.app') || hostname.includes('secure-gluco')) {
+        console.log('Detected production environment, using Render URL');
+        return 'https://secure-gluco.onrender.com';
+      }
+    }
+    
+    // Default to localhost for development
+    console.log('Using localhost for development');
+    return 'http://localhost:5000';
+  }
 
   async getLatestAnalysis(): Promise<StreamlitAnalysisData | null> {
     try {

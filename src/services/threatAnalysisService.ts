@@ -20,14 +20,21 @@ export interface ApiResponse<T> {
 }
 
 class ThreatAnalysisService {
-  private baseUrl = 'http://localhost:5000/api';
+  private baseUrl = process.env.NODE_ENV === 'production' 
+    ? 'https://secure-gluco.onrender.com/api'
+    : 'http://localhost:5000/api';
   private pollingInterval: number | null = null;
   private listeners: Array<(data: ThreatAnalysisData | null) => void> = [];
 
   // Get latest analysis
   async getLatestAnalysis(): Promise<ThreatAnalysisData | null> {
     try {
-      const response = await fetch(`${this.baseUrl}/threat-analysis`);
+      console.log(`Fetching analysis from: ${this.baseUrl}/threat-analysis`);
+      const response = await fetch(`${this.baseUrl}/threat-analysis`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'cors',
+      });
       const result: ApiResponse<ThreatAnalysisData> = await response.json();
       
       if (result.status === 'success') {

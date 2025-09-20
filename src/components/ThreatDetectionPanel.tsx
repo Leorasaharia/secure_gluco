@@ -185,7 +185,7 @@ export const ThreatDetectionPanel: React.FC<ThreatDetectionPanelProps> = ({ onTh
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <div id="threat-detection-panel" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-3">
           <Brain className="h-6 w-6 text-purple-600" />

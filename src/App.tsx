@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import AboutPage from './components/AboutPage';
 import { AlertPanel } from './components/AlertPanel';
@@ -29,6 +29,8 @@ function DashboardApp({ userName, loginTime }: { userName: string, loginTime: Da
 
   // ✅ Added lastSync state to track latest sync time
   const [lastSync, setLastSync] = useState<Date>(loginTime);
+
+  const threatDetectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLastSync(new Date()); // set initial sync time
@@ -138,6 +140,19 @@ function DashboardApp({ userName, loginTime }: { userName: string, loginTime: Da
     setAlerts(prev => prev.map(alert => alert.id === alertId ? { ...alert, dismissed: true } : alert));
   };
 
+  const handleOpenThreatAnalysis = () => {
+    setShowThreatDetection(true);
+    // Scroll to threat detection panel after it's rendered
+    setTimeout(() => {
+      if (threatDetectionRef.current) {
+        threatDetectionRef.current.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start' 
+        });
+      }
+    }, 100);
+  };
+
   const activeAlerts = alerts.filter(alert => !alert.dismissed);
   const currentReading = glucoseData[glucoseData.length - 1];
 
@@ -168,7 +183,7 @@ function DashboardApp({ userName, loginTime }: { userName: string, loginTime: Da
         </div>
 
         {showThreatDetection && (
-          <div className="mb-8">
+          <div ref={threatDetectionRef} className="mb-8">
             <ThreatDetectionPanel onThreatDetected={handleThreatDetected} />
           </div>
         )}
@@ -184,7 +199,7 @@ function DashboardApp({ userName, loginTime }: { userName: string, loginTime: Da
       <SettingsPanel
         isOpen={isSettingsPanelOpen}
         onClose={() => setIsSettingsPanelOpen(false)}
-        onOpenThreatAnalysis={() => setShowThreatDetection(true)}
+        onOpenThreatAnalysis={handleOpenThreatAnalysis}
       />
     </div>
   );

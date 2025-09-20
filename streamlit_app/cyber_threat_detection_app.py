@@ -251,7 +251,7 @@ def send_analysis_to_frontend(threat_class, confidence, all_probabilities, featu
         
         # Send to API bridge
         response = requests.post(
-            "https://your-render-url.onrender.com/api/threat-analysis",  # Replace with your actual Render URL
+            "https://secure-gluco.onrender.com/api/threat-analysis",  # Updated with actual Render URL
             json=payload,
             timeout=3
         )

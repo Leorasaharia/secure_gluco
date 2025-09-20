@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Brain, Zap, AlertTriangle, CheckCircle, BarChart3, Network } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Brain, Zap, AlertTriangle, CheckCircle, BarChart3, Network, Wifi, WifiOff } from 'lucide-react';
+import { apiService, StreamlitAnalysisData } from '../utils/streamlitAPI';
 
 interface ThreatDetectionPanelProps {
   onThreatDetected: (threat: any) => void;

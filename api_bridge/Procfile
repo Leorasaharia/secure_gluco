@@ -1,0 +1,2 @@
+# Heroku deployment for API Bridge
+web: python app.py

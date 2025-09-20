@@ -1,4 +1,3 @@
-# Full corrected cyber_threat_detection_app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,6 +10,8 @@ from plotly.subplots import make_subplots
 import warnings
 import os, joblib
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+import requests
+from datetime import datetime
 warnings.filterwarnings('ignore')
 
 # Set page config
@@ -233,6 +234,56 @@ def _randomized_probabilities(features, label_encoder, FEATURE_NAMES, randomness
     return probs
 
 # --- new predict_threat function (replaces old) ---
+def send_analysis_to_frontend(threat_class, confidence, all_probabilities, features, feature_names):
+    """Send analysis results to React frontend via API bridge"""
+    try:
+        # Prepare the payload
+        payload = {
+            "threat_class": threat_class,
+            "confidence": float(confidence),
+            "probabilities": {k: float(v) for k, v in all_probabilities.items()},
+            "features": dict(zip(feature_names, features)),
+            "recommendations": get_recommendations_for_threat(threat_class),
+            "risk_level": determine_risk_level(threat_class, confidence),
+            "timestamp": datetime.now().isoformat(),
+            "model_used": "real" if st.session_state.get('use_real_model', False) else "demo"
+        }
+        
+        # Send to API bridge
+        response = requests.post(
+            "http://localhost:5000/api/threat-analysis",
+            json=payload,
+            timeout=3
+        )
+        
+        if response.status_code == 200:
+            st.sidebar.success("✅ Data sent to React dashboard")
+        else:
+            st.sidebar.warning("⚠️ React dashboard not connected")
+            
+    except Exception as e:
+        st.sidebar.info("ℹ️ React dashboard offline")
+
+def get_recommendations_for_threat(threat_class):
+    """Generate recommendations based on threat class"""
+    if threat_class.lower() in ['benign', 'normal']:
+        return ["✅ Traffic appears normal", "📊 Continue monitoring", "🔄 Keep systems updated"]
+    elif 'ddos' in threat_class.lower():
+        return ["🚨 Block source IP immediately", "🛡️ Activate DDoS protection", "📈 Scale infrastructure"]
+    elif 'port' in threat_class.lower() or 'scan' in threat_class.lower():
+        return ["🔒 Block scanning IP", "🔍 Strengthen firewall rules", "🔧 Check vulnerabilities"]
+    else:
+        return ["⚠️ Investigate threat immediately", "🛡️ Implement security measures", "📞 Contact security team"]
+
+def determine_risk_level(threat_class, confidence):
+    """Determine risk level"""
+    if threat_class.lower() in ['benign', 'normal']:
+        return "Low"
+    elif 'ddos' in threat_class.lower():
+        return "Critical" if confidence > 0.8 else "High"
+    else:
+        return "High" if confidence > 0.8 else "Medium"
+
 def predict_threat(features, model, scaler, label_encoder, device, use_real_model):
     """Make prediction using the trained model or randomized simulation.
 
@@ -540,12 +591,16 @@ def main():
                     features, model, scaler, label_encoder, device, use_real_model
                 )
 
+                # Send data to React frontend
+                send_analysis_to_frontend(threat_class, confidence, all_probabilities, features, FEATURE_NAMES)
+
                 # Store results in session state
                 st.session_state.prediction_results = {
                     'threat_class': threat_class,
                     'confidence': confidence,
                     'probabilities': all_probabilities
                 }
+                st.session_state.use_real_model = use_real_model
 
         # Display results if available
         if hasattr(st.session_state, 'prediction_results'):

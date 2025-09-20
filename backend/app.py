@@ -8,7 +8,7 @@ import threading
 import time
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+CORS(app, origins=["http://localhost:5174", "http://localhost:3000", "https://secure-gluco.vercel.app/"])  # Enable CORS for React frontend
 
 # Shared data store (in production, use Redis or database)
 shared_data = {

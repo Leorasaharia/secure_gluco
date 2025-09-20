@@ -10,6 +10,7 @@ import { IntroAnimation } from './components/IntroAnimation';
 import { SecurityDashboard } from './components/SecurityDashboard';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ThreatDetectionPanel } from './components/ThreatDetectionPanel';
+import { StreamlitDataPanel } from './components/StreamlitDataPanel';
 import { Alert, GlucoseReading, InsulinPumpStatus, SecurityThreat } from './types';
 import {
   generateGlucoseData,
@@ -187,6 +188,11 @@ function DashboardApp({ userName, loginTime }: { userName: string, loginTime: Da
             <ThreatDetectionPanel onThreatDetected={handleThreatDetected} />
           </div>
         )}
+
+        {/* Streamlit Live Data Panel */}
+        <div className="mb-8">
+          <StreamlitDataPanel onThreatDetected={handleThreatDetected} />
+        </div>
       </main>
 
       <AlertPanel

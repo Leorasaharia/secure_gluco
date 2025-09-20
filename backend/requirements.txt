@@ -1,0 +1,10 @@
+# API Bridge Requirements
+flask==3.0.3
+flask-cors==5.0.0
+requests==2.32.3
+gunicorn==21.2.0
+
+# Usage Instructions:
+# 1. Install Python dependencies: pip install -r requirements.txt
+# 2. Run API bridge: python app.py
+# 3. API will be available at http://localhost:5000

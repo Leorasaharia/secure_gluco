@@ -20,11 +20,26 @@ export interface ApiResponse<T> {
 }
 
 class ThreatAnalysisService {
-  private baseUrl = process.env.NODE_ENV === 'production' 
-    ? 'https://secure-gluco.onrender.com/api'
-    : 'http://localhost:5000/api';
+  private baseUrl = this.getApiBaseUrl();
   private pollingInterval: number | null = null;
   private listeners: Array<(data: ThreatAnalysisData | null) => void> = [];
+
+  private getApiBaseUrl(): string {
+    // Use Vite environment variable if available
+    if (import.meta.env.VITE_API_BASE_URL) {
+      return `${import.meta.env.VITE_API_BASE_URL}/api`;
+    }
+    
+    // Fallback: Check if we're in production (Vercel deployment)
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (hostname.includes('vercel.app') || hostname.includes('secure-gluco')) {
+        return 'https://secure-gluco.onrender.com/api';
+      }
+    }
+    // Default to localhost for development
+    return 'http://localhost:5000/api';
+  }
 
   // Get latest analysis
   async getLatestAnalysis(): Promise<ThreatAnalysisData | null> {

@@ -11,7 +11,7 @@ export interface StreamlitAnalysisData {
 }
 
 class SimpleAPIService {
-  private baseUrl = 'http://localhost:5000/api';
+  private baseUrl = 'https://secure-gluco.onrender.com'; // Replace with your actual Render URL
 
   async getLatestAnalysis(): Promise<StreamlitAnalysisData | null> {
     try {

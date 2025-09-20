@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: securgluco-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        fromService:
+          type: web
+          name: securgluco-api
+          property: port
